@@ -13,6 +13,7 @@ The full model is trained end-to-end via self-play with targets from search/roll
 
 import torch
 import torch.nn as nn
+import numpy as np
 from typing import Dict, Tuple, List, Optional
 
 from .transformer import BeliefStateTransformer
@@ -208,19 +209,19 @@ class BeliefStateGeometry:
     def __init__(self, agent: PokerTransformerAgent):
         self.agent = agent
     
-    def get_attention_to_opponent_actions(self, 
-                                         attention_weights: List[torch.Tensor],
-                                         action_history: List) -> torch.Tensor:
+    def get_attention_to_opponent_actions(self,
+                                          attention_weights: List[torch.Tensor],
+                                          action_history: List) -> torch.Tensor:
         """
         Extract attention weights focused on opponent's actions.
-        
+
         Intuition: If the model learns well, attention to opponent actions
         should encode how likely different cards are.
-        
+
         Args:
             attention_weights: From forward pass
             action_history: List of (player, action, amount) tuples
-            
+
         Returns:
             opponent_attention: (batch, seq_len) - attention to opponent moves
         """
@@ -229,19 +230,50 @@ class BeliefStateGeometry:
         for i, (player, action, amount) in enumerate(action_history):
             if player == 1:  # Opponent
                 opponent_indices.append(i + 1)  # +1 because we prepend own card
-        
+
         if not opponent_indices:
             return None
-        
+
         # Average attention across heads and layers
         # attention_weights is list of (batch, heads, seq_len, seq_len)
         avg_attention = torch.stack(attention_weights).mean(dim=(1, 2))  # (batch, seq_len, seq_len)
-        
+
         # Get final position's attention to opponent actions
-        final_pos_attention = avg_attention[:, -1, :]  # (batch, seq_len)
-        
-        opponent_attention = final_pos_attention[:, opponent_indices].mean(dim=-1)
+        final_attn = avg_attention[:, -1, :]  # (batch, seq_len)
+
+        opponent_attention = final_attn[:, opponent_indices].mean(dim=-1)
         return opponent_attention
+
+    def analyze_attention_semantics(self, attention_weights: List[torch.Tensor],
+                                   action_history: List) -> Dict:
+        """
+        Analyze attention patterns with semantic meaning.
+
+        Returns correlations between attention and game semantics.
+        """
+        results = {}
+
+        # Attention to different action types
+        action_types = {'FOLD': [], 'CALL': [], 'RAISE': [], 'CHECK': []}
+
+        for layer_idx, attn_w in enumerate(attention_weights):
+            # attn_w: (batch, heads, seq_len, seq_len)
+            final_attn = attn_w[0, :, -1, :].mean(dim=0)  # Average over heads
+
+            # Correlate with action types in history
+            for pos, (player, action, amount) in enumerate(action_history):
+                if pos + 1 < len(final_attn):  # +1 for card position
+                    attention_weight = final_attn[pos + 1].item()
+                    action_types[action.name].append(attention_weight)
+
+            results[f'layer_{layer_idx}'] = {
+                'attention_by_action': {
+                    action: np.mean(weights) if weights else 0.0
+                    for action, weights in action_types.items()
+                }
+            }
+
+        return results
     
     def belief_state_variance(self, belief_states: torch.Tensor) -> torch.Tensor:
         """

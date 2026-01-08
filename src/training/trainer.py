@@ -22,7 +22,7 @@ from src.config.config import ExperimentConfig
 from src.model import PokerTransformerAgent
 from src.environment import KuhnPoker
 from src.training.search import SelfPlayBuffer, run_self_play_game, LatentSpaceSearcher
-from src.evaluation import visualize_training_summary
+from src.evaluation import visualize_training_summary, PokerEvaluator
 
 
 class PokerTrainer:
@@ -138,15 +138,31 @@ class PokerTrainer:
                 self.metrics[key].append(value)
             
             self.metrics['iteration'].append(iteration)
-            
-            # 4. Logging
+
+            # 4. Periodic evaluation (exploitability, etc.)
+            if iteration % max(1, self.config.training.checkpoint_freq // 2) == 0:
+                try:
+                    evaluator = PokerEvaluator(self.agent, self.config, self.log_dir)
+                    eval_results = evaluator.run_full_evaluation()
+
+                    # Log exploitability
+                    if 'exploitability' in eval_results and eval_results['exploitability'] is not None:
+                        exploitability = eval_results['exploitability']
+                        self.metrics['exploitability'] = self.metrics.get('exploitability', [])
+                        self.metrics['exploitability'].append(exploitability)
+                        self.logger.info(f"  Exploitability: {exploitability:.6f}")
+
+                except Exception as e:
+                    self.logger.warning(f"Evaluation failed: {e}")
+
+            # 5. Logging
             self.logger.info(
                 f"  Losses - Policy: {loss_dict.get('policy_loss', 0):.4f}, "
                 f"Value: {loss_dict.get('value_loss', 0):.4f}, "
                 f"Transition: {loss_dict.get('transition_loss', 0):.4f}"
             )
-            
-            # 5. Checkpointing
+
+            # 6. Checkpointing
             if iteration % self.config.training.checkpoint_freq == 0:
                 self._save_checkpoint(iteration)
             

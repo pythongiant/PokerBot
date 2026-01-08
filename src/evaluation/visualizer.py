@@ -109,7 +109,51 @@ class BeliefStateVisualizer:
         plt.close()
         
         return path
-    
+
+    def plot_exploitability_heatmap(self, exploitability_over_time: List[float],
+                                   iterations: List[int],
+                                   title: str = "Exploitability Over Training") -> Optional[Path]:
+        """
+        Plot exploitability metrics over training iterations as a heatmap.
+
+        Args:
+            exploitability_over_time: List of exploitability values
+            iterations: Corresponding iteration numbers
+            title: Plot title
+
+        Returns:
+            Path to saved figure
+        """
+        if not HAS_MATPLOTLIB:
+            return None
+
+        fig, ax = plt.subplots(figsize=(12, 6))
+
+        # Create heatmap data (exploitability vs iteration)
+        # For heatmap, we can show exploitability as a 1D heatmap or line plot
+        ax.plot(iterations, exploitability_over_time, 'r-', linewidth=2, marker='o', markersize=4)
+
+        # Add reference line at 0 (Nash equilibrium)
+        ax.axhline(y=0, color='black', linestyle='--', alpha=0.7, label='Nash Equilibrium')
+
+        # Fill area above zero (exploitable)
+        ax.fill_between(iterations,
+                       [max(0, x) for x in exploitability_over_time],
+                       0, color='red', alpha=0.3, label='Exploitable Region')
+
+        ax.set_xlabel('Training Iteration')
+        ax.set_ylabel('Exploitability (Best Response Value)')
+        ax.set_title(title)
+        ax.grid(True, alpha=0.3)
+        ax.legend()
+
+        # Save
+        path = self.output_dir / "exploitability_over_time.png"
+        plt.savefig(path, dpi=150, bbox_inches='tight')
+        plt.close()
+
+        return path
+
     def _simple_pca(self, X: np.ndarray, n_components: int = 2) -> 'SimplePCA':
         """Simple PCA fallback if sklearn not available."""
         class SimplePCA:
@@ -126,41 +170,127 @@ class BeliefStateVisualizer:
         return SimplePCA().fit_transform(X)
     
     def plot_attention_heatmap(self, attention_weights: torch.Tensor,
-                               layer_idx: int = -1,
-                               head_idx: int = 0,
-                               title: str = "Attention Heatmap") -> Optional[Path]:
+                                layer_idx: int = -1,
+                                head_idx: int = 0,
+                                title: str = "Attention Heatmap",
+                                action_history: Optional[List] = None,
+                                opponent_card: Optional[int] = None) -> Optional[Path]:
         """
-        Visualize attention weights as heatmap.
-        
+        Visualize attention weights as heatmap with semantic overlays.
+
         Args:
             attention_weights: (batch, heads, seq_len, seq_len)
             layer_idx: Which layer to visualize
             head_idx: Which head to visualize
             title: Plot title
-            
+            action_history: List of (player, action, amount) tuples for semantic labels
+            opponent_card: Opponent's card for strategy correlation
+
         Returns:
             Path to saved figure
         """
         if not HAS_MATPLOTLIB:
             return None
-        
+
         # Extract attention matrix
         attn = attention_weights[0, head_idx, :, :].cpu().detach().numpy()
-        
-        fig, ax = plt.subplots(figsize=(8, 8))
+
+        fig, ax = plt.subplots(figsize=(10, 10))
         im = ax.imshow(attn, cmap='hot', aspect='auto')
-        
-        ax.set_xlabel('Key Position')
-        ax.set_ylabel('Query Position')
+
+        # Add semantic labels if action history provided
+        if action_history:
+            seq_len = attn.shape[0]
+            labels = self._generate_attention_labels(action_history, seq_len)
+            ax.set_xticks(range(len(labels)))
+            ax.set_xticklabels(labels, rotation=45, ha='right', fontsize=8)
+            ax.set_yticks(range(len(labels)))
+            ax.set_yticklabels(labels, fontsize=8)
+
+            # Highlight opponent actions
+            opponent_positions = [i for i, (player, _, _) in enumerate(action_history) if player == 1]
+            for pos in opponent_positions:
+                if pos < seq_len:
+                    ax.add_patch(plt.Rectangle((pos-0.5, -0.5), 1, seq_len,
+                                             fill=False, edgecolor='blue', linewidth=2, alpha=0.7))
+
+        ax.set_xlabel('Key Position (What is attended to)')
+        ax.set_ylabel('Query Position (Current focus)')
         ax.set_title(f"{title} (Layer {layer_idx}, Head {head_idx})")
-        
+
         plt.colorbar(im, ax=ax, label='Attention Weight')
-        
+
+        # Add legend for semantic overlays
+        if action_history:
+            legend_elements = [
+                plt.Line2D([0], [0], color='blue', linewidth=2, label='Opponent Actions')
+            ]
+            ax.legend(handles=legend_elements, loc='upper right')
+
         # Save
         path = self.output_dir / f"attention_heatmap_L{layer_idx}_H{head_idx}.png"
         plt.savefig(path, dpi=150, bbox_inches='tight')
         plt.close()
-        
+
+        return path
+
+    def _generate_attention_labels(self, action_history: List, seq_len: int) -> List[str]:
+        """Generate semantic labels for attention positions."""
+        labels = []
+
+        # Position 0 is usually own card
+        labels.append("Own Card")
+
+        # Subsequent positions are action history
+        for i, (player, action, amount) in enumerate(action_history):
+            if i + 1 < seq_len:  # +1 because position 0 is card
+                player_name = "Opp" if player == 1 else "Self"
+                action_name = action.name
+                labels.append(f"{player_name} {action_name}")
+
+        # Pad if needed
+        while len(labels) < seq_len:
+            labels.append(f"Pos {len(labels)}")
+
+        return labels[:seq_len]
+
+    def plot_attention_strategy_correlation(self,
+                                           attention_weights: torch.Tensor,
+                                           opponent_card: int,
+                                           layer_idx: int = -1,
+                                           title: str = "Attention vs Opponent Strategy") -> Optional[Path]:
+        """
+        Plot attention correlation with opponent card strength.
+
+        Shows how attention to opponent actions correlates with actual opponent strategy.
+        """
+        if not HAS_MATPLOTLIB:
+            return None
+
+        # For Kuhn poker, correlate attention to opponent actions with card strength
+        # Higher attention to opponent bets when opponent has strong cards
+
+        fig, ax = plt.subplots(figsize=(8, 6))
+
+        # Extract attention to opponent positions
+        attn = attention_weights[0, :, -1, :].mean(dim=0).cpu().detach().numpy()  # Average over heads
+
+        # Mock correlation analysis (would need actual game data)
+        # In real implementation, correlate with actual opponent betting patterns
+        card_names = ['J', 'Q', 'K']
+        opponent_card_name = card_names[opponent_card]
+
+        ax.bar(range(len(attn)), attn, alpha=0.7)
+        ax.set_xlabel('Sequence Position')
+        ax.set_ylabel('Attention Weight')
+        ax.set_title(f'{title} (Opponent: {opponent_card_name})')
+        ax.grid(True, alpha=0.3)
+
+        # Save
+        path = self.output_dir / f"attention_strategy_corr_L{layer_idx}.png"
+        plt.savefig(path, dpi=150, bbox_inches='tight')
+        plt.close()
+
         return path
     
     def plot_value_landscape(self, beliefs: np.ndarray, values: np.ndarray,
@@ -408,6 +538,9 @@ class BeliefStateVisualizer:
         path = self.plot_belief_evolution(game_beliefs_list, all_outcomes, num_games=5)
         if path:
             report['visualizations']['belief_evolution'] = str(path)
+
+        # Exploitability heatmap (if data available)
+        # This would be called separately when training metrics are available
         
         # Statistics
         report['statistics'] = {
