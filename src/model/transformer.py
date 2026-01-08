@@ -99,11 +99,20 @@ class CausalSelfAttention(nn.Module):
         scores = torch.matmul(q, k.transpose(-2, -1)) * self.scale
         
         # Create causal mask (lower triangular: each position can only see itself and past)
-        if mask is None:
-            causal_mask = torch.triu(torch.ones(seq_len, seq_len, device=x.device), diagonal=1)
-            mask = causal_mask.bool()
+        causal_mask = torch.triu(torch.ones(seq_len, seq_len, device=x.device), diagonal=1)
+        causal_mask = causal_mask.bool()
         
-        scores.masked_fill_(mask.unsqueeze(0).unsqueeze(0), float('-inf'))
+        # Combine with padding mask if provided
+        if mask is not None:
+            # mask is (batch, seq_len) - expand to (batch, seq_len, seq_len)
+            padding_mask_expanded = mask.unsqueeze(1)  # (batch, 1, seq_len)
+            padding_mask_expanded = padding_mask_expanded.expand(-1, seq_len, -1)  # (batch, seq_len, seq_len)
+            combined_mask = causal_mask.unsqueeze(0) | padding_mask_expanded  # (batch, seq_len, seq_len)
+            combined_mask = combined_mask.unsqueeze(1)  # (batch, 1, seq_len, seq_len) for broadcasting over heads
+        else:
+            combined_mask = causal_mask.unsqueeze(0)  # (1, seq_len, seq_len)
+        
+        scores.masked_fill_(combined_mask, float('-inf'))
         
         # Softmax and dropout
         attn_weights = F.softmax(scores, dim=-1)

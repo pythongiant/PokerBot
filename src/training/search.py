@@ -262,8 +262,9 @@ def run_self_play_game(agent, env: KuhnPoker, searcher: Optional[LatentSpaceSear
             belief, _ = agent.encode_belief([obs])
             policy_logits = agent.predict_policy(belief)
             
-            # Get legal actions
-            legal_actions = env.get_legal_actions(current_player)
+            # Get legal actions (returns List[Action enum])
+            legal_actions_enum = env.get_legal_actions(current_player)
+            legal_actions = [a.value for a in legal_actions_enum]  # Convert to indices
             
             # Sample action (with some exploration)
             if np.random.random() < 0.1:  # 10% random
@@ -273,7 +274,12 @@ def run_self_play_game(agent, env: KuhnPoker, searcher: Optional[LatentSpaceSear
                 legal_mask = np.zeros(4)
                 legal_mask[legal_actions] = 1.0
                 policy = policy * legal_mask
-                policy = policy / (policy.sum() + 1e-8)
+                policy_sum = policy.sum()
+                if policy_sum > 0:
+                    policy = policy / policy_sum
+                else:
+                    # If all masked, use uniform over legal actions
+                    policy = legal_mask / legal_mask.sum()
                 action = np.random.choice(4, p=policy)
         
         game.actions.append(action)

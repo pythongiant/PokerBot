@@ -18,7 +18,11 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from src.config.config import ExperimentConfig, ModelConfig, TrainingConfig
 from src.training import PokerTrainer
-from src.evaluation import PokerEvaluator
+from src.evaluation import (
+    PokerEvaluator,
+    play_and_visualize_sample_game,
+    visualize_geometry
+)
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -128,12 +132,22 @@ def main():
     trainer = PokerTrainer(config)
     trainer.train()
     
+    log_dir = Path(config.log_dir) / config.name
+    
     # Optional: Evaluation
     if args.eval:
         logger.info("Running evaluation...")
         evaluator = PokerEvaluator(trainer.agent, config)
         eval_results = evaluator.run_full_evaluation()
         logger.info(f"Evaluation results: {eval_results}")
+    
+    # Play sample games and visualize
+    logger.info("Playing sample games...")
+    play_and_visualize_sample_game(trainer.agent, config, log_dir, num_games=2)
+    
+    # Visualize belief state geometry
+    logger.info("Analyzing belief state geometry...")
+    visualize_geometry(trainer.agent, config, log_dir)
     
     # Optional: Load checkpoint and evaluate
     if args.checkpoint:
