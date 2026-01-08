@@ -1,0 +1,20 @@
+{
+  "iteration": [
+    0.0
+  ],
+  "game_reward": [
+    0.5
+  ],
+  "policy_loss": [
+    0.046458546072244644
+  ],
+  "value_loss": [
+    0.006453183479607105
+  ],
+  "transition_loss": [
+    0.5141893029212952
+  ],
+  "opponent_range_loss": [
+    0.0
+  ]
+}

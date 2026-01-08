@@ -237,6 +237,8 @@ class PokerTrainer:
         observations = []
         policy_targets = []
         value_targets = []
+        actions = []
+        next_observations = []
         
         for game in games:
             if not game.observations:
@@ -258,6 +260,18 @@ class PokerTrainer:
             else:
                 # Uniform policy as default
                 policy_targets.extend([np.ones(4) / 4.0] * len(game.observations))
+            
+            # Actions and next observations for transition learning
+            if hasattr(game, 'actions') and game.actions:
+                actions.extend(game.actions)
+                # Create next observations by shifting: next_obs[i] = obs[i+1]
+                # For the last action, we don't have a next observation, so skip it
+                if len(game.observations) > len(game.actions):
+                    # Normal case: more obs than actions (final obs has no action)
+                    next_observations.extend(game.observations[1:len(game.actions)+1])
+                else:
+                    # Fallback: observations and actions same length
+                    next_observations.extend(game.observations[1:])
         
         if not observations:
             return None
@@ -269,6 +283,12 @@ class PokerTrainer:
             'value_targets': torch.tensor(np.array(value_targets), 
                                          dtype=torch.float32, device=self.device),
         }
+        
+        # Add transition targets if available
+        if actions and next_observations:
+            batch['actions'] = torch.tensor(np.array(actions), 
+                                           dtype=torch.long, device=self.device)
+            batch['next_observations'] = next_observations
         
         return batch
     
@@ -297,15 +317,44 @@ class PokerTrainer:
         value_loss = F.mse_loss(values, value_targets)
         losses['value_loss'] = weights['value'] * value_loss
         
-        # 3. Transition loss: optional, requires next states
-        # For now, skip - would need to encode z_{t+1}
-        losses['transition_loss'] = torch.tensor(0.0, device=self.device)
+        # 3. Transition loss: L2 distance between predicted and actual next beliefs
+        if 'actions' in batch and 'next_observations' in batch and len(batch['next_observations']) > 0:
+            # Get current beliefs
+            current_beliefs = outputs['belief_states']
+            actions_tensor = batch['actions']
+            
+            # Verify shapes match
+            if len(batch['next_observations']) != current_beliefs.shape[0]:
+                # If mismatch, adjust actions to match
+                actions_tensor = actions_tensor[:len(batch['next_observations'])]
+                current_beliefs = current_beliefs[:len(batch['next_observations'])]
+            
+            # Predict next beliefs using transition model
+            predicted_next_beliefs = self.agent.predict_next_belief(current_beliefs, actions_tensor)
+            
+            # Encode actual next observations to get target next beliefs
+            actual_next_beliefs_list = []
+            for next_obs in batch['next_observations']:
+                # Encode the next observation (wrap in list since agent expects list)
+                with torch.no_grad():
+                    next_output = self.agent([next_obs])
+                    actual_next_beliefs_list.append(next_output['belief_states'])
+            
+            if actual_next_beliefs_list:
+                actual_next_beliefs = torch.cat(actual_next_beliefs_list, dim=0)
+                # Ensure shapes match
+                if actual_next_beliefs.shape == predicted_next_beliefs.shape:
+                    transition_loss = F.mse_loss(predicted_next_beliefs, actual_next_beliefs)
+                    losses['transition_loss'] = weights['transition'] * transition_loss
+                else:
+                    losses['transition_loss'] = torch.tensor(0.0, device=self.device)
+            else:
+                losses['transition_loss'] = torch.tensor(0.0, device=self.device)
+        else:
+            losses['transition_loss'] = torch.tensor(0.0, device=self.device)
         
         # 4. Opponent range loss: optional
-        if outputs['opponent_range_logits'] is not None:
-            losses['opponent_range_loss'] = torch.tensor(0.0, device=self.device)
-        else:
-            losses['opponent_range_loss'] = torch.tensor(0.0, device=self.device)
+        losses['opponent_range_loss'] = torch.tensor(0.0, device=self.device)
         
         return losses
     
