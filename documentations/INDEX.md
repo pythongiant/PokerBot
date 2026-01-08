@@ -57,7 +57,28 @@ Welcome to the Poker Transformer project! Use this guide to navigate the documen
 
 ---
 
-## 🔬 Research & Experiments
+## � Visualization & Analysis
+
+**Want to understand what the model learned?**
+
+1. **[VISUALIZATIONS.md](VISUALIZATIONS.md)** (15 min read)
+   - Belief state projections (2D plots)
+   - Value landscapes
+   - Attention heatmaps
+   - Training metrics dashboard
+   - Interpretation guide
+
+2. **Automatic Visualizations**
+   - Generated after each training run
+   - Saved to `logs/<experiment>/visualizations/`
+   - No manual code needed!
+
+3. **Manual Generation**
+   ```python
+   from src.evaluation import BeliefStateVisualizer
+   visualizer = BeliefStateVisualizer(agent, config)
+   visualizer.generate_belief_report(num_games=50)
+   ```
 
 **Planning to extend or publish?**
 
@@ -216,8 +237,9 @@ A: See README.md "Success Criteria" and run evaluation
 | ROADMAP.md | Research | Long | 20 min |
 | QUICK_REFERENCE.md | Reference | Medium | 5 min |
 | IMPLEMENTATION_SUMMARY.md | Summary | Medium | 10 min |
+| VISUALIZATIONS.md | Guide | Medium | 15 min |
 
-**Total**: ~90 minutes of documentation  
+**Total**: ~105 minutes of documentation  
 **Code**: ~2800 lines of research-grade Python
 
 ---

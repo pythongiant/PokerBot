@@ -18,6 +18,7 @@ import logging
 
 from src.model import PokerTransformerAgent
 from src.environment import KuhnPoker, Action, ObservableState
+from .visualizer import BeliefStateVisualizer
 
 
 class PokerEvaluator:
@@ -301,5 +302,15 @@ class PokerEvaluator:
             json.dump(results, f, indent=2, default=float)
         
         self.logger.info(f"Evaluation complete. Results saved to {results_path}")
+        
+        # Generate belief state visualizations
+        self.logger.info("Generating belief state visualizations...")
+        try:
+            visualizer = BeliefStateVisualizer(self.agent, self.config, self.output_dir)
+            viz_report = visualizer.generate_belief_report(num_games=20)
+            self.logger.info(f"Visualizations saved to {self.output_dir}")
+            results['visualizations'] = viz_report.get('visualizations', {})
+        except Exception as e:
+            self.logger.warning(f"Belief visualization failed: {e}")
         
         return results

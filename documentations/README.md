@@ -148,6 +148,7 @@ Training outputs are saved to `logs/<experiment_name>/`:
 - `checkpoint_iter*.pt`: Model checkpoints
 - `metrics.json`: Training metrics
 - `evaluation_results.json`: Eval results (if `--eval`)
+- `visualizations/`: Auto-generated plots (belief projections, value landscapes, attention heatmaps)
 
 ## 📈 Key Experiments
 
@@ -205,7 +206,19 @@ Compare against game-theoretic baseline (requires CFR solver).
 
 ## 🧠 Model Details
 
-### Belief State Geometry
+### Belief State Visualization
+
+Training automatically generates rich visualizations:
+
+- **Training Metrics Dashboard**: Game reward, policy loss, value loss over iterations
+- **Belief State Projections**: 2D visualization of latent belief space (colored by outcome)
+- **Value Function Landscape**: How value estimates vary across belief space
+- **Belief Evolution**: How beliefs change during individual games
+- **Attention Heatmaps**: Which history positions the model attends to
+
+All visualizations are saved to `logs/<experiment>/visualizations/`.
+
+See [VISUALIZATIONS.md](VISUALIZATIONS.md) for interpretation guide.
 
 The latent belief state $z_t$ encodes:
 - **Own card strength** (embedded in initial token)

@@ -22,6 +22,7 @@ from src.config.config import ExperimentConfig
 from src.model import PokerTransformerAgent
 from src.environment import KuhnPoker
 from src.training.search import SelfPlayBuffer, run_self_play_game, LatentSpaceSearcher
+from src.evaluation import visualize_training_summary
 
 
 class PokerTrainer:
@@ -154,6 +155,13 @@ class PokerTrainer:
         
         self.logger.info("Training complete!")
         self._save_metrics()
+        
+        # Generate visualizations
+        self.logger.info("Generating visualizations...")
+        try:
+            visualize_training_summary(self.log_dir)
+        except Exception as e:
+            self.logger.warning(f"Visualization failed: {e}")
     
     def _run_self_play_batch(self, num_games: int) -> List:
         """Run batch of self-play games."""
