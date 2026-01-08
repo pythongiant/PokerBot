@@ -1,6 +1,6 @@
 ## Summary of Work
 
-This repository implements a Transformer-based poker AI agent that learns to play Kuhn Poker through self-play training. While RNNs are mentioned in the query, the implementation uses Transformers (a more modern sequential model architecture) to encode game histories into belief states, with learned transition models and value functions.
+This repository implements a Transformer-based poker AI agent that learns to play Kuhn Poker through self-play training. The implementation uses Transformers (a more modern sequential model architecture) to encode game histories into belief states, with learned transition models and value functions.
 
 ### What We've Done
 
