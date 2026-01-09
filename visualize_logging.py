@@ -152,7 +152,7 @@ class EnhancedPokerVisualizer(PygamePokerVisualizer):
         
         player_id = self.game_state.current_player
         
-        # Get model predictions before stepping
+        # Get model predictions and select action before stepping
         with torch.no_grad():
             # Get current belief and predictions
             if hasattr(self, 'current_belief') and self.current_belief is not None:
@@ -167,8 +167,21 @@ class EnhancedPokerVisualizer(PygamePokerVisualizer):
                 policy_logits = self.agent.predict_policy(belief)[0]
                 policy_probs = torch.softmax(policy_logits, dim=-1)
             
-            # Log the move
+            # Select action using model policy (same as base visualizer)
             legal_actions = self.env.get_legal_actions(player_id)
+            if len(legal_actions) == 0:
+                action = Action.CHECK  # fallback
+            else:
+                # Create mask for legal actions
+                legal_mask = torch.zeros(4, device=policy_logits.device)
+                for a in legal_actions:
+                    legal_mask[a.value] = 1.0
+                # Mask illegal actions with large negative
+                masked_logits = policy_logits + (1 - legal_mask) * (-1e9)
+                action_idx = torch.argmax(masked_logits).item()
+                action = Action(action_idx)
+            
+            # Log the move with the selected action
             self.log_move(player_id, action, belief, value, policy_probs, legal_actions, self.game_state)
         
         # Continue with original step logic
