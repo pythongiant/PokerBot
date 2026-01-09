@@ -90,7 +90,7 @@ class KuhnPoker:
     NUM_ACTIONS = 4  # FOLD, CALL, RAISE, CHECK
     
     def __init__(self, initial_stack: int = 100, ante: int = 1, 
-                 max_raises: int = 4, seed: int = None):
+                 max_raises: int = 4, seed: Optional[int] = None):
         """
         Initialize Kuhn poker environment.
         
@@ -103,7 +103,7 @@ class KuhnPoker:
         self.initial_stack = initial_stack
         self.ante = ante
         self.max_raises = max_raises
-        self.rng = np.random.RandomState(seed)
+        self.rng = np.random.RandomState(seed if seed is not None else 42)
         
         self.reset()
     
@@ -117,15 +117,22 @@ class KuhnPoker:
         # Deal cards: shuffle deck and assign
         cards = self.rng.permutation(self.DECK)
         
+        # Post antes: deduct from each player's stack and add to pot
+        initial_stacks = [self.initial_stack - self.ante, self.initial_stack - self.ante]
+        initial_pot = 2 * self.ante
+        
+        # Record ante posting in betting history for completeness
+        ante_bets = [[], []]  # Empty for now - could record as special ANTE actions
+        
         # Each player gets one card, we'll have a "community" card unused
         # (standard Kuhn is 3 cards, 2 players, 1 unused)
         self.game_state = GameState(
             public_cards=[],
-            public_bets=[[], []],  # Two players
+            public_bets=ante_bets,  # Two players
             private_cards=[cards[0], cards[1]],
             current_player=0,  # Player 0 acts first
-            stacks=[self.initial_stack, self.initial_stack],
-            pot=0,
+            stacks=initial_stacks,
+            pot=initial_pot,
             street=0,
             is_terminal=False,
             payoffs=None,
@@ -200,14 +207,14 @@ class KuhnPoker:
         
         return actions
     
-    def step(self, player_id: int, action: Action, amount: int = 1) -> Tuple[GameState, ObservableState, bool]:
+    def step(self, player_id: int, action: Action, amount: Optional[int] = None) -> Tuple[GameState, ObservableState, bool]:
         """
         Execute action and return new state.
         
         Args:
             player_id: Actor
             action: Action to take
-            amount: Bet amount (for RAISE/CALL, default 1 chip)
+            amount: Bet amount (calculated automatically for CALL if None)
             
         Returns:
             (full_state, observable_state, is_terminal)
@@ -218,10 +225,33 @@ class KuhnPoker:
         if self.game_state.current_player != player_id:
             raise ValueError(f"Not player {player_id}'s turn")
         
+        # Calculate betting amounts based on action type
+        if action == Action.CHECK:
+            amount = 0
+        elif action == Action.CALL:
+            # Calculate call amount to match opponent's contribution
+            opponent_id = 1 - player_id
+            my_street_contribution = sum(amt for _, amt in self.game_state.public_bets[player_id])
+            opp_street_contribution = sum(amt for _, amt in self.game_state.public_bets[opponent_id])
+            amount = opp_street_contribution - my_street_contribution
+            # Ensure amount is at least the minimum (shouldn't be negative)
+            amount = max(0, amount)
+        elif action == Action.RAISE:
+            # For RAISE, if amount is provided, use it directly
+            # If amount is None, calculate default raise (call + 1 chip)
+            if amount is None:
+                opponent_id = 1 - player_id
+                my_street_contribution = sum(amt for _, amt in self.game_state.public_bets[player_id])
+                opp_street_contribution = sum(amt for _, amt in self.game_state.public_bets[opponent_id])
+                call_amount = max(0, opp_street_contribution - my_street_contribution)
+                amount = call_amount + 1  # Raise by 1 chip over the call
+        else:
+            amount = 0
+        
         # Record action
         self.game_state.public_bets[player_id].append((action, amount))
         
-        # Update pot and stacks
+        # Update pot and stacks (only for CALL and RAISE)
         if action in [Action.CALL, Action.RAISE]:
             self.game_state.stacks[player_id] -= amount
             self.game_state.pot += amount
@@ -232,30 +262,44 @@ class KuhnPoker:
             self.game_state.is_terminal = True
             other_id = 1 - player_id
             payoff = self.game_state.pot
+
+            # Update stacks: winner gets the pot
+            self.game_state.stacks[other_id] += payoff
+
             self.game_state.payoffs = [
                 payoff if i == other_id else -payoff
                 for i in range(self.NUM_PLAYERS)
             ]
         else:
-            # Check if both players have checked or both have called same amount
+            # Check if both players have acted and contributions are equal
             other_id = 1 - player_id
             my_contribution = sum(amt for _, amt in self.game_state.public_bets[player_id])
             other_contribution = sum(amt for _, amt in self.game_state.public_bets[other_id])
             
-            if my_contribution == other_contribution and action in [Action.CHECK, Action.CALL]:
+            # Game only terminates when both players have acted AND contributions are equal
+            # AND the action that made them equal was CHECK or CALL
+            both_acted = (len(self.game_state.public_bets[player_id]) > 0 and 
+                         len(self.game_state.public_bets[other_id]) > 0)
+            
+            if both_acted and my_contribution == other_contribution and action in [Action.CHECK, Action.CALL]:
                 # Game reaches showdown
                 self.game_state.is_terminal = True
                 my_card = self.game_state.private_cards[player_id]
                 other_card = self.game_state.private_cards[other_id]
-                
+
                 if my_card > other_card:
                     payoff = self.game_state.pot
                 elif other_card > my_card:
                     payoff = -self.game_state.pot
                 else:
                     payoff = 0  # Tie (shouldn't happen in Kuhn)
-                
-                self.game_state.payoffs = [payoff if i == player_id else -payoff 
+
+                # Update stacks: winner gets the pot
+                winner_id = player_id if payoff > 0 else (1 - player_id) if payoff < 0 else None
+                if winner_id is not None:
+                    self.game_state.stacks[winner_id] += self.game_state.pot
+
+                self.game_state.payoffs = [payoff if i == player_id else -payoff
                                           for i in range(self.NUM_PLAYERS)]
             else:
                 # Pass to next player
@@ -264,10 +308,12 @@ class KuhnPoker:
         obs = self._get_observable_state(1 - player_id)
         return self.game_state, obs, self.game_state.is_terminal
     
-    def get_payoff(self, player_id: int) -> float:
+def get_payoff(self, player_id: int) -> float:
         """Get terminal payoff for player (only valid if terminal)."""
         if not self.game_state.is_terminal:
             raise ValueError("Game not terminal")
+        if self.game_state.payoffs is None:
+            raise ValueError("Payoffs not set")
         return self.game_state.payoffs[player_id]
 
 

@@ -2,6 +2,7 @@ torch==2.0.0
 numpy==1.24.3
 pyyaml==6.0
 
-# Optional: for visualizations
+# For visualizations
 matplotlib>=3.5.0
 scikit-learn>=1.0.0
+pygame>=2.5.0

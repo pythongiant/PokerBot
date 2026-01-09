@@ -83,26 +83,32 @@ class KuhnCFRSolver:
             if i % 1000 == 0:
                 self.logger.info(f"CFR iteration {i}/{iterations}")
 
-            # Traverse game tree for both players
+            # Traverse game tree for both players with all possible card combinations
             for player in [0, 1]:
-                self._cfr('', player, [None, None])
+                for p1_card in range(3):
+                    for p2_card in range(3):
+                        if p1_card != p2_card:  # Cards must be different in Kuhn poker
+                            cards = [p1_card, p2_card]
+                            self._cfr('', player, cards)
 
-        # Average strategies
+        # Average strategies - use actual visited infosets from strategy_sum
         nash_strategy = {}
-        for infoset in self.infosets:
-            key = self._get_infoset_key(infoset[0], infoset[1])
-            if key in self.strategy_sum:
-                total = sum(self.strategy_sum[(key, a)] for a in range(self.NUM_ACTIONS))
-                if total > 0:
-                    nash_strategy[key] = [
-                        self.strategy_sum[(key, a)] / total for a in range(self.NUM_ACTIONS)
-                    ]
-                else:
-                    nash_strategy[key] = [1.0 / self.NUM_ACTIONS] * self.NUM_ACTIONS
+        visited_infosets = set()
+        for (infoset, action) in self.strategy_sum:
+            visited_infosets.add(infoset)
+        
+        for infoset in visited_infosets:
+            total = sum(self.strategy_sum[(infoset, a)] for a in range(self.NUM_ACTIONS))
+            if total > 0:
+                nash_strategy[infoset] = [
+                    self.strategy_sum[(infoset, a)] / total for a in range(self.NUM_ACTIONS)
+                ]
+            else:
+                nash_strategy[infoset] = [1.0 / self.NUM_ACTIONS] * self.NUM_ACTIONS
 
         return nash_strategy
 
-    def _cfr(self, history: str, player: int, cards: List[Optional[int]]) -> float:
+    def _cfr(self, history: str, player: int, cards: List[int]) -> float:
         """
         CFR traversal.
 
@@ -117,7 +123,8 @@ class KuhnCFRSolver:
 
         if current_player == player:
             # Our turn - compute counterfactual regret
-            infoset = self._get_infoset_key(cards[player], history)
+            player_card = cards[player]
+            infoset = self._get_infoset_key(player_card, history)
             strategy = self._get_strategy(infoset)
 
             util = 0
@@ -140,7 +147,8 @@ class KuhnCFRSolver:
             return util
         else:
             # Opponent's turn
-            infoset = self._get_infoset_key(cards[current_player], history)
+            current_card = cards[current_player]
+            infoset = self._get_infoset_key(current_card, history)
             strategy = self._get_strategy(infoset)
 
             util = 0
@@ -270,12 +278,19 @@ class KuhnCFRSolver:
             return best_value
         else:
             # Nash opponent's turn
-            infoset = self._get_infoset_key(cards[current_player], history)
+            current_card = cards[current_player]
+            infoset = self._get_infoset_key(current_card, history)
             strategy = nash_strategy.get(infoset, [0.5, 0.5])  # Default uniform
+            
+            # Ensure strategy is not None and has proper format
+            if strategy is None:
+                strategy = [0.5, 0.5]
+            elif len(strategy) < self.NUM_ACTIONS:
+                strategy = strategy + [0.5] * (self.NUM_ACTIONS - len(strategy))
 
             value = 0
             for action in range(self.NUM_ACTIONS):
-                prob = strategy[action]
+                prob = strategy[action] if action < len(strategy) else 0.5
                 new_history = history + ('p' if action == 0 else 'b')
                 value += prob * self._best_response_game_value(new_history, br_player, cards, nash_strategy)
 

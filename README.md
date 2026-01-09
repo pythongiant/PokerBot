@@ -88,6 +88,39 @@ python main.py --num-iterations 100 --eval    # Full training + visualizations
 
 Output: `logs/<experiment>/visualizations/` contains belief geometry, attention patterns, training curves.
 
+## Interactive Pygame Visualization
+
+A real-time interactive visualization showing the agent's internal representations during gameplay:
+
+```bash
+# Auto-play mode (watch the agent play)
+python visualize.py --auto
+
+# Manual mode (click buttons to choose actions)
+python visualize.py
+
+# With a trained model
+python visualize.py --model logs/poker_transformer_default/checkpoint.pth --auto
+
+# Custom settings
+python visualize.py --auto --play-delay 1000 --width 1920 --height 1080
+```
+
+**What you'll see:**
+- **Cards & Pot**: Visual representation of the game state
+- **Belief State (64D)**: Real-time bar chart showing the latent vector activations
+- **Value Function**: Current expected payoff estimate with history graph
+- **Transition Model**: Error between predicted and actual belief updates
+- **Attention Weights**: Heatmap of how the Transformer attends to game history
+- **Action History**: Log of all actions taken in the current game
+
+**Controls:**
+- `R` - Reset game
+- `A` - Toggle auto-play mode
+- `Space` - Single step (when in auto mode)
+- `Q` - Quit
+- Mouse - Click action buttons (manual mode)
+
 ## Architecture
 
 ```
@@ -103,6 +136,7 @@ Game History → Transformer Encoder → Belief State z_t (64-256 dims)
 - `src/model/agent.py` - Unified agent + geometry analysis
 - `src/training/trainer.py` - Self-play loop
 - `src/evaluation/evaluator.py` - Model evaluation & visualization
+- `src/visualization/pygame_visualizer.py` - Real-time interactive visualization
 
 ## Configuration
 
@@ -223,9 +257,11 @@ src/
 ├── training/
 │   ├── search.py           - MCTS/rollouts
 │   └── trainer.py          - Training loop
-└── evaluation/
-    ├── evaluator.py        - Head-to-head eval
-    └── visualizer.py       - Belief geometry viz
+├── evaluation/
+│   ├── evaluator.py        - Head-to-head eval
+│   └── visualizer.py       - Belief geometry viz
+└── visualization/
+    └── pygame_visualizer.py - Real-time interactive visualization
 ```
 
 ## Commands
@@ -240,14 +276,13 @@ python main.py --latent-dim 128 --num-layers 4
 # With full evaluation
 python main.py --num-iterations 100 --eval --eval-games 200
 
+# Interactive visualization
+python visualize.py --auto                           # Watch agent play
+python visualize.py --model logs/.../checkpoint.pth  # Load trained model
+python test_visualization.py                         # Test visualization
+
 # Specific experiment name
 python main.py --name "ablation_no_transition" --latent-dim 64
 ```
 
 All output goes to: `logs/<experiment_name>/`
-
-## For More Details
-
-- [Architecture Deep Dive](documentations/ARCHITECTURE.md)
-- [Analysis Report](documentations/ANALYSIS_REPORT.md)  
-- [Visualization Guide](documentations/VISUALIZATIONS.md)
